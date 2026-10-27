@@ -208,14 +208,19 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.6 "JetBrains Mono",ui-
   <div id="st-main" hidden>
     <label class="f">Pilih gambar</label><select id="sfile"></select>
     <div class="cmp" id="cmp" style="margin-top:12px"><img id="bf" alt="Asli"><img id="af" class="af" alt="Hasil"><div class="hd" id="hd"><span id="ic-unfold"></span></div></div>
-    <h2>Gaya</h2>
+    <label class="f">Mode Edit</label>
+    <select id="smode" style="margin-bottom:12px">
+      <option value="local">Filter Lokal (Cepat, Offline)</option>
+      <option value="ai">AI Edit (OpenAI, Butuh Key)</option>
+    </select>
+    <h2 id="h-gaya">Gaya</h2>
     <div class="chips" id="presets"></div>
     <label class="f" style="margin-top:14px">Prompt</label>
     <textarea id="pr" placeholder="Contoh: warna hangat ala film lawas"></textarea>
     <div class="row"><select id="phist"><option value="">Riwayat prompt</option></select></div>
     <div class="row"><button class="btn p" id="gen"></button><button class="btn" id="rst"></button></div>
-    <div class="row"><select id="sfmt"><option value="png">PNG</option><option value="jpeg">JPG</option><option value="webp">WebP</option></select><button class="btn" id="sdl"></button></div>
-    <p class="meta" style="margin:12px 2px">Tanpa API key, hasil dibuat dengan filter kanvas di perangkat. Isi API key di Setting untuk saran prompt dari model.</p>
+    <div class="row"><select id="sfmt"><option value="png">PNG</option><option value="jpeg">JPG</option><option value="webp">WebP</option></select><button class="btn" id="sprev"></button><button class="btn p" id="sdl"></button></div>
+    <p class="meta" id="studio-note" style="margin:12px 2px">Tanpa API key, hasil dibuat dengan filter kanvas di perangkat. Isi API key di Setting untuk saran prompt dari model.</p>
   </div>
 </section>
 
@@ -249,6 +254,11 @@ pre{white-space:pre-wrap;word-break:break-all;font:12px/1.6 "JetBrains Mono",ui-
 <nav><div>
   <button class="a" data-t="home"></button><button data-t="studio"></button><button data-t="set"></button>
 </div></nav>
+<div id="lightbox" style="position:fixed;inset:0;background:#000d;z-index:100;display:none;place-items:center;padding:20px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)" onclick="if(event.target===this)this.style.display='none'">
+  <img id="lbimg" alt="Preview" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:12px;box-shadow:0 14px 34px #000c">
+  <iframe id="lbframe" title="Preview" style="display:none;width:100%;height:90vh;border:none;border-radius:12px;background:#fff"></iframe>
+  <button style="position:absolute;top:20px;right:20px;background:var(--sf);color:var(--tx);border:none;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;cursor:pointer;box-shadow:var(--sh);font-size:20px" onclick="document.getElementById('lightbox').style.display='none'">✕</button>
+</div>
 
 <script>
 (function(){
@@ -281,7 +291,7 @@ set('#ic-zap',ic('zap'));set('#more',ic('more'));set('#ic-up',ic('up'));
 
 set('#pick',lab('plus','Pilih file'));set('#clr',lab('trash','Hapus semua'));set('#go',lab('zap','Convert semua'));
 set('#ic-wand',ic('wand').replace('<svg','<svg style="width:48px;height:48px;color:var(--ac)"'));set('#ic-unfold',ic('unf'));
-set('#gen',lab('spark','Buat'));set('#rst',lab('rf','Ganti asli'));set('#sdl',lab('dl','Unduh hasil'));
+set('#gen',lab('spark','Buat'));set('#rst',lab('rf','Ganti asli'));set('#sdl',lab('dl','Unduh'));set('#sprev',lab('eye','Lihat'));
 set('#test',lab('plug','Tes'));
 set('#saveai',lab('ok','Simpan AI'));set('#zip',lab('arch','ZIP semua'));set('#clrhist',lab('trash','Hapus riwayat'));set('#clrall',lab('trash','Bersihkan cache &amp; setelan'));
 set('[data-m=history]',lab('clock','Riwayat'));set('[data-m=cache]',lab('trash','Bersihkan cache'));set('[data-m=about]',lab('info','Tentang'));
@@ -327,12 +337,15 @@ function render(){const t=$('#tools');t.hidden=!files.length;updateSections();fi
 
   if(f.kind==='video'||f.kind==='audio'){const w=document.createElement('div');w.innerHTML=f.kind==='video'?'<video class="pl" src="'+f.url+'" controls preload="metadata"></video>':'<audio src="'+f.url+'" controls preload="metadata"></audio>';c.insertBefore(w,c.querySelector('.bar'))}
   const rw=c.querySelector('.row');
-  if(f.out){const a=document.createElement('a');a.className='btn';a.style.cssText='min-height:40px;text-decoration:none;color:inherit;flex:none';a.href=f.out.url;a.download=f.out.name;a.innerHTML=lab('dl','Unduh');rw.appendChild(a);
+  if(f.out){const a=document.createElement('a');a.className='btn';a.style.cssText='min-height:40px;text-decoration:none;color:inherit;flex:none';a.href=f.out.url;a.download=f.out.name;a.innerHTML=lab('dl','Unduh');
+    const v=document.createElement('button');v.className='btn';v.style.cssText='min-height:40px;flex:none';v.innerHTML=lab('eye','Lihat');v.onclick=()=>{const lb=$('#lightbox'),img=$('#lbimg'),fr=$('#lbframe');if((f.out.blob.type||'').includes('pdf')){img.style.display='none';fr.style.display='block';fr.src=f.out.url}else{fr.style.display='none';img.style.display='block';img.src=f.out.url}lb.style.display='grid'};
+    rw.appendChild(v);rw.appendChild(a);
     try{const fl=new File([f.out.blob],f.out.name,{type:f.out.blob.type});if(navigator.canShare&&navigator.canShare({files:[fl]})){const sb=document.createElement('button');sb.className='btn';sb.style.cssText='min-height:40px;flex:none';sb.innerHTML=lab('share','Bagikan');sb.onclick=()=>navigator.share({files:[fl],title:f.out.name}).catch(()=>{});rw.appendChild(sb)}}catch(e){}
     const ot=(f.out.blob.type||'').split('/')[0];
     if(ot==='image'){const pv=document.createElement('img');pv.src=f.out.url;pv.style.cssText='width:100%;border-radius:10px;margin-top:6px;max-height:180px;object-fit:contain';c.appendChild(pv)}
     else if(ot==='video'){const pv=document.createElement('div');pv.style.cssText='margin-top:6px;width:100%';pv.innerHTML='<video class="pl" src="'+f.out.url+'" controls preload="metadata"></video>';c.appendChild(pv)}
-    else if(ot==='audio'){const pv=document.createElement('div');pv.style.cssText='margin-top:6px;width:100%';pv.innerHTML='<audio src="'+f.out.url+'" controls preload="metadata"></audio>';c.appendChild(pv)}}
+    else if(ot==='audio'){const pv=document.createElement('div');pv.style.cssText='margin-top:6px;width:100%';pv.innerHTML='<audio src="'+f.out.url+'" controls preload="metadata"></audio>';c.appendChild(pv)}
+    else if(ot==='application'&&(f.out.blob.type||'').includes('pdf')){const pv=document.createElement('div');pv.style.cssText='margin-top:6px;width:100%';pv.innerHTML='<iframe src="'+f.out.url+'" style="width:100%;height:250px;border:none;border-radius:10px;background:#fff"></iframe>';c.appendChild(pv)}}
   const x=document.createElement('button');x.className='ib x';x.setAttribute('aria-label','Hapus');x.innerHTML=ic('x');x.onclick=()=>del(f.id);c.appendChild(x);
   c.addEventListener('dragstart',()=>{dragId=f.id;c.classList.add('drg')});c.addEventListener('dragend',()=>c.classList.remove('drg'));
   c.addEventListener('dragover',e=>e.preventDefault());c.addEventListener('drop',e=>{e.preventDefault();if(dragId===f.id)return;const a=files.findIndex(z=>z.id===dragId),b=files.findIndex(z=>z.id===f.id);if(a<0||b<0)return;files.splice(b,0,files.splice(a,1)[0]);$('#sort').value='manual';render()});
@@ -488,16 +501,19 @@ async function apply(){if(!curF)return null;const img=await loadImg(curF.url);co
 function aiBase(p){if(p==='custom'){const b=($('#cbase')&&$('#cbase').value.trim())||'';if(b)return b.replace(/\/+$/,'');const v=$('#cmod').value.trim();return /^https?:\/\//.test(v)?v.replace(/\/+$/,''):''}const B={openai:'https://api.openai.com/v1',grok:'https://api.x.ai/v1',groq:'https://api.groq.com/openai/v1',mistral:'https://api.mistral.ai/v1',deepseek:'https://api.deepseek.com',openrouter:'https://openrouter.ai/api/v1',perplexity:'https://api.perplexity.ai'};return B[p]||''}
 function aiHeaders(p,k){if(p==='claude')return{'x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true','content-type':'application/json'};return{'Authorization':'Bearer '+k,'content-type':'application/json'}}
 async function callAI(sys,user){const p=$('#prov').value,k=$('#key').value.trim();if(!k)throw new Error('API key kosong');const model=$('#mod').hidden?$('#cmod').value.trim():$('#mod').value;if(!model)throw new Error('Model kosong');if(p==='gemini'){const u='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(k);const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:user}]}]})});if(!r.ok)throw new Error('AI '+r.status);const j=await r.json();return((j.candidates&&j.candidates[0]&&j.candidates[0].content.parts[0].text)||'').trim()}if(p==='claude'){const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:aiHeaders(p,k),body:JSON.stringify({model,max_tokens:300,system:sys,messages:[{role:'user',content:user}]})});if(!r.ok)throw new Error('AI '+r.status);const j=await r.json();return((j.content&&j.content[0]&&j.content[0].text)||'').trim()}const base=aiBase(p);if(!base)throw new Error('Provider tidak mendukung AI');const r=await fetch(base+'/chat/completions',{method:'POST',headers:aiHeaders(p,k),body:JSON.stringify(/^o1/.test(model)?{model,messages:[{role:'user',content:sys+'\n\n'+user}]}:{model,messages:[{role:'system',content:sys},{role:'user',content:user}],temperature:0.7,max_tokens:300})});if(!r.ok)throw new Error('AI '+r.status);const j=await r.json();return((j.choices&&j.choices[0]&&j.choices[0].message.content)||'').trim()}
-$('#gen').onclick=async()=>{let p=$('#pr').value.trim();if($('#key').value.trim()){try{const s=await callAI('Kamu asisten edit foto. Beri SATU prompt singkat (maks 12 kata, bahasa Indonesia) untuk gaya foto. Balas hanya prompt-nya tanpa tanda kutip.','Permintaan: '+(p||'beri gaya yang menarik'));if(s){p=s;$('#pr').value=s}}catch(e){toast('AI: '+e.message,'err')}}if(p){const h=lj('phist',[]).filter(z=>z!==p);h.unshift(p);ls.s('phist',JSON.stringify(h.slice(0,10)));tx('promptHistory','readwrite',s=>s.add({text:p,date:Date.now()}));fillPH()}try{const u=await apply();toast(u?'Filter: '+u:'Filter diterapkan')}catch(e){toast(e.message,'err')}};
+async function editImageAI(sourceFile,prompt){const k=$('#key').value.trim();const p=$('#prov').value;if(!k)throw new Error('API key kosong. Isi di Setting.');if(p!=='openai')throw new Error('AI Edit saat ini hanya mendukung provider OpenAI (model gpt-image-1).');const url=URL.createObjectURL(sourceFile);const img=await loadImg(url);URL.revokeObjectURL(url);const c=document.createElement('canvas');const size=1024;c.width=size;c.height=size;const ctx=c.getContext('2d');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,size,size);const scale=Math.min(size/img.naturalWidth,size/img.naturalHeight);const dw=img.naturalWidth*scale;const dh=img.naturalHeight*scale;const dx=(size-dw)/2;const dy=(size-dh)/2;ctx.drawImage(img,dx,dy,dw,dh);const blob=await new Promise(r=>c.toBlob(r,'image/png'));if(!blob)throw new Error('Gagal memproses gambar');if(blob.size>4*1024*1024)throw new Error('Gambar >4MB setelah kompresi');const fd=new FormData();fd.append('image',blob,'image.png');fd.append('prompt',prompt);fd.append('model','gpt-image-1');fd.append('n','1');fd.append('size','1024x1024');const r=await fetch('https://api.openai.com/v1/images/edits',{method:'POST',headers:{'Authorization':'Bearer '+k},body:fd});if(!r.ok){const err=await r.json().catch(()=>({}));throw new Error(err.error?.message||'AI Edit gagal: '+r.status)}const j=await r.json();const b64=j.data?.[0]?.b64_json;if(!b64)throw new Error('Respons tidak berisi gambar');const byteCharacters=atob(b64);const byteNumbers=new Array(byteCharacters.length);for(let i=0;i<byteCharacters.length;i++)byteNumbers[i]=byteCharacters.charCodeAt(i);return new Blob([new Uint8Array(byteNumbers)],{type:'image/png'})}
+$('#gen').onclick=async()=>{let p=$('#pr').value.trim();if(!curF)return toast('Pilih gambar dulu','err');if($('#smode').value==='ai'){if(!p)return toast('Ketik instruksi edit untuk AI','err');$('#gen').disabled=true;const oldHTML=$('#gen').innerHTML;$('#gen').innerHTML='Memproses AI...';try{const blob=await editImageAI(curF.file,p);if(res)URL.revokeObjectURL(res.url);res={f:curF.id,blob,url:URL.createObjectURL(blob),fmt:'png',preset:'AI Edit'};$('#af').src=res.url;toast('AI Edit berhasil')}catch(e){toast(e.message,'err')}finally{$('#gen').disabled=false;$('#gen').innerHTML=oldHTML}return}if($('#key').value.trim()){try{const s=await callAI('Kamu asisten edit foto. Beri SATU prompt singkat (maks 12 kata, bahasa Indonesia) untuk gaya foto. Balas hanya prompt-nya tanpa tanda kutip.','Permintaan: '+(p||'beri gaya yang menarik'));if(s){p=s;$('#pr').value=s}}catch(e){toast('AI: '+e.message,'err')}}if(p){const h=lj('phist',[]).filter(z=>z!==p);h.unshift(p);ls.s('phist',JSON.stringify(h.slice(0,10)));tx('promptHistory','readwrite',s=>s.add({text:p,date:Date.now()}));fillPH()}try{const u=await apply();toast(u?'Filter: '+u:'Filter diterapkan')}catch(e){toast(e.message,'err')}};
+$('#smode').onchange=()=>{const isAI=$('#smode').value==='ai';$('#h-gaya').style.display=isAI?'none':'';$('#presets').style.display=isAI?'none':'';$('#pr').placeholder=isAI?'Instruksi edit: misal ganti latar jadi pantai, hapus objek di kiri...':'Contoh: warna hangat ala film lawas';document.getElementById('studio-note').innerHTML=isAI?'AI Edit menggunakan OpenAI gpt-image-1. Pastikan provider di Setting = OpenAI dan API key valid.':'Tanpa API key, hasil dibuat dengan filter kanvas di perangkat. Isi API key di Setting untuk saran prompt dari model.'};
 $('#pr').addEventListener('input',()=>{if(preset){preset='';$$('#presets .chip').forEach(b=>b.classList.remove('a'))}});
 $('#rst').onclick=()=>{if(res)URL.revokeObjectURL(res.url);res=null;preset='';pick();initStudio()};
 $('#sdl').onclick=()=>{if(!res)return toast('Belum ada hasil untuk diunduh','info');const a=document.createElement('a');a.href=res.url;a.download='studio_'+curF.file.name.replace(/\.[^.]+$/,'')+'.'+(res.fmt==='jpeg'?'jpg':res.fmt||'png');a.click()};
+$('#sprev').onclick=()=>{if(!res)return toast('Belum ada hasil untuk dilihat','info');$('#lbimg').src=res.url;$('#lbimg').style.display='block';$('#lbframe').style.display='none';$('#lightbox').style.display='grid'};
 if($('#sfmt'))$('#sfmt').onchange=()=>{if(res)apply()};
 function fillPH(){const s=$('#phist');s.innerHTML='<option value="">Riwayat prompt</option>';lj('phist',[]).forEach(p=>{const o=document.createElement('option');o.textContent=p;o.value=p;s.appendChild(o)})}
 $('#phist').onchange=()=>{if($('#phist').value)$('#pr').value=$('#phist').value};
 set('#hd span',ic('unf'));
 (function(){const c=$('#cmp');let on=false;function mv(e){const r=c.getBoundingClientRect();let p=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*100;$('#af').style.clipPath='inset(0 0 0 '+p+'%)';$('#hd').style.left=p+'%'}
- c.addEventListener('pointerdown',e=>{on=true;c.setPointerCapture(e.pointerId);mv(e)});c.addEventListener('pointermove',e=>{if(on)mv(e)});c.addEventListener('pointerup',()=>on=false)})();
+ c.addEventListener('pointerdown',e=>{on=true;c.setPointerCapture(e.pointerId);mv(e)});c.addEventListener('pointermove',e=>{if(on)mv(e)});c.addEventListener('pointerup',()=>on=false);c.addEventListener('dblclick',()=>{if(res){$('#lbimg').src=res.url;$('#lbimg').style.display='block';$('#lbframe').style.display='none';$('#lightbox').style.display='grid'}})})();
 
 /* ---------- Settings ---------- */
 const PROV={openai:['gpt-4o','gpt-4o-mini','gpt-4.1','gpt-4-turbo','gpt-3.5-turbo','o1'],gemini:['gemini-3.5-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash'],openrouter:[],grok:['grok-3','grok-3-mini','grok-2-vision'],claude:['claude-sonnet-5-5','claude-haiku-5-5','claude-opus-5-5','claude-sonnet-4-5'],groq:['llama-3.3-70b-versatile','llama-3.1-8b-instant'],mistral:['mistral-large-latest','mistral-small-latest'],deepseek:['deepseek-chat','deepseek-reasoner'],perplexity:['sonar','sonar-pro'],custom:[]};
