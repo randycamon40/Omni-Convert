@@ -332,15 +332,24 @@ async function convDoc(f,i){if(f.ext==='pdf')throw new Error('PDF sebagai input 
  if(['txt','md','log'].includes(f.ext)&&$('#dfmt').value==='pdf'){const J=window.jspdf;if(!J)throw new Error('jsPDF gagal dimuat');const d=new J.jsPDF();const ln=d.splitTextToSize(t,180);let y=15;ln.forEach(s=>{if(y>280){d.addPage();y=15}d.text(s,15,y);y+=6});return{blob:d.output('blob'),name:fname(f,i,0,0,q,'pdf'),fmt:'pdf'}}if(['txt','md','log'].includes(f.ext)){const esc=t.replace(/&/g,'&amp;').replace(/</g,'&lt;');return{blob:new Blob(['<!doctype html><meta charset="utf-8"><pre>'+esc+'</pre>'],{type:'text/html'}),name:fname(f,i,0,0,q,'html'),fmt:'html'}}
  throw new Error('Tipe ini butuh pustaka tambahan')}
 let ff=null,paused=false,curFF=null,cancelled=false;
+async function toBlobURL(url, mime){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('Gagal fetch '+url+' ('+r.status+')');
+  const buf = await r.arrayBuffer();
+  return URL.createObjectURL(new Blob([buf], {type: mime}));
+}
 function ldCDN(url){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=url;s.onload=res;s.onerror=()=>rej(new Error('CDN gagal: '+url));document.head.appendChild(s)})}
-const CDN_FFMPEG='https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.min.js';
-const CDN_CORE='https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/';
+const CDN_FFMPEG='https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.min.js';
+const CDN_CORE='https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/';
 async function getFF(){
   if(ff) return ff;
   if(!window.FFmpegWASM) await ldCDN(CDN_FFMPEG);
   const F=new FFmpegWASM.FFmpeg();
   F.on('progress',e=>{const p=Math.round((e.progress||0)*100);$('#ot').textContent='ffmpeg '+p+'%';if(curFF){const card=document.querySelector('#list .card[data-id="'+curFF.id+'"]');if(card){const b=card.querySelector('.bar i');if(b)b.style.width=Math.max(15,Math.min(99,p))+'%'}}});
-  await F.load({coreURL:CDN_CORE+'ffmpeg-core.js',wasmURL:CDN_CORE+'ffmpeg-core.wasm'});
+  $('#ot').textContent='Mengunduh core ffmpeg...';
+  const coreURL = await toBlobURL(CDN_CORE+'ffmpeg-core.js', 'text/javascript');
+  const wasmURL = await toBlobURL(CDN_CORE+'ffmpeg-core.wasm', 'application/wasm');
+  await F.load({coreURL, wasmURL});
   ff=F; return F;
 }
 async function convFF(f,i){curFF=f;const F=await getFF();const v=f.kind==='video',fm=v?$('#vfmt').value:$('#afmt').value,inn='in_'+f.id+'.'+(f.ext||'bin'),out='out_'+f.id+'.'+fm;await F.writeFile(inn,new Uint8Array(await f.file.arrayBuffer()));const a=['-i',inn];
