@@ -1,6 +1,27 @@
 <!DOCTYPE html>
 <html lang="id">
-<head>
+<head><style>
+@font-face {
+  font-family: "Optimistic";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/OptimisticAI_VF_Optimized.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Optimistic Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/OptimisticMono_W_TextRegular.woff2") format("woff2");
+}
+:where(html) {
+  font-family: "Optimistic", system-ui, sans-serif;
+}
+:where(code, pre, kbd, samp) {
+  font-family: "Optimistic Mono", ui-monospace, monospace;
+}
+</style>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>OmniConvert</title>
@@ -333,24 +354,70 @@ async function convDoc(f,i){if(f.ext==='pdf')throw new Error('PDF sebagai input 
  throw new Error('Tipe ini butuh pustaka tambahan')}
 let ff=null,paused=false,curFF=null,cancelled=false;
 async function toBlobURL(url, mime){
-  const r = await fetch(url);
-  if(!r.ok) throw new Error('Gagal fetch '+url+' ('+r.status+')');
+  const r = await fetch(url, {cache: 'no-store'});
+  if(!r.ok) throw new Error('HTTP '+r.status+' '+url);
   const buf = await r.arrayBuffer();
   return URL.createObjectURL(new Blob([buf], {type: mime}));
 }
-function ldCDN(url){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=url;s.onload=res;s.onerror=()=>rej(new Error('CDN gagal: '+url));document.head.appendChild(s)})}
-const CDN_FFMPEG='https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.min.js';
-const CDN_CORE='https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/';
+function loadScript(url){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=url; s.crossOrigin='anonymous';
+    s.onload=res;
+    s.onerror=()=>rej(new Error(url));
+    document.head.appendChild(s);
+  });
+}
+async function loadWithFallback(urls){
+  let lastErr;
+  for(const u of urls){
+    try{
+      $('#ot').textContent='Mengunduh ffmpeg dari '+new URL(u).hostname+'...';
+      await loadScript(u);
+      if(window.FFmpegWASM) return;
+    }catch(e){ lastErr=e; console.warn('CDN script gagal', u, e); }
+  }
+  throw lastErr||new Error('Semua CDN script gagal');
+}
 async function getFF(){
   if(ff) return ff;
-  if(!window.FFmpegWASM) await ldCDN(CDN_FFMPEG);
+  const SCRIPT_CDNS=[
+    './vendor/ffmpeg/ffmpeg.js',
+    'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.min.js',
+    'https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.min.js',
+    'https://esm.sh/@ffmpeg/ffmpeg@0.12.15?bundle'
+  ];
+  const CORE_CDNS=[
+    './vendor/ffmpeg/',
+    'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/',
+    'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/'
+  ];
+  if(!window.FFmpegWASM){
+    await loadWithFallback(SCRIPT_CDNS);
+  }
   const F=new FFmpegWASM.FFmpeg();
-  F.on('progress',e=>{const p=Math.round((e.progress||0)*100);$('#ot').textContent='ffmpeg '+p+'%';if(curFF){const card=document.querySelector('#list .card[data-id="'+curFF.id+'"]');if(card){const b=card.querySelector('.bar i');if(b)b.style.width=Math.max(15,Math.min(99,p))+'%'}}});
-  $('#ot').textContent='Mengunduh core ffmpeg...';
-  const coreURL = await toBlobURL(CDN_CORE+'ffmpeg-core.js', 'text/javascript');
-  const wasmURL = await toBlobURL(CDN_CORE+'ffmpeg-core.wasm', 'application/wasm');
-  await F.load({coreURL, wasmURL});
-  ff=F; return F;
+  F.on('progress',e=>{
+    const p=Math.round((e.progress||0)*100);
+    $('#ot').textContent='ffmpeg '+p+'%';
+    if(curFF){
+      const card=document.querySelector('#list .card[data-id="'+curFF.id+'"]');
+      if(card){const b=card.querySelector('.bar i'); if(b) b.style.width=Math.max(15,Math.min(99,p))+'%';}
+    }
+  });
+  let lastCoreErr;
+  for(const base of CORE_CDNS){
+    try{
+      $('#ot').textContent='Memuat core dari '+ (base.startsWith('.')?'lokal':new URL(base).hostname) +'...';
+      const coreURL = await toBlobURL(base+'ffmpeg-core.js', 'text/javascript');
+      const wasmURL = await toBlobURL(base+'ffmpeg-core.wasm', 'application/wasm');
+      await F.load({coreURL, wasmURL});
+      ff=F; return F;
+    }catch(e){
+      lastCoreErr=e; console.warn('Core gagal', base, e);
+      continue;
+    }
+  }
+  throw lastCoreErr||new Error('Semua core gagal dimuat');
 }
 async function convFF(f,i){curFF=f;const F=await getFF();const v=f.kind==='video',fm=v?$('#vfmt').value:$('#afmt').value,inn='in_'+f.id+'.'+(f.ext||'bin'),out='out_'+f.id+'.'+fm;await F.writeFile(inn,new Uint8Array(await f.file.arrayBuffer()));const a=['-i',inn];
  if(v&&fm!=='mp3'){const h=$('#vres').value;if(fm==='gif')a.push('-vf','fps=12,scale='+(h?'-2:'+h:'480:-1'),'-an');else{if(h)a.push('-vf','scale=-2:'+h);a.push('-c:v',fm==='webm'?'libvpx-vp9':'libx264','-crf',$('#crf').value||'26');if(fm==='webm')a.push('-b:v','0');else a.push('-preset','veryfast','-movflags','+faststart','-pix_fmt','yuv420p');if($('#vmute').checked)a.push('-an');else a.push('-map','0:v:0?','-map','0:a:0?','-c:a',fm==='webm'?'libopus':'aac')}}
@@ -439,5 +506,5 @@ if(/[?&]share=1/.test(location.search)){takeShared().then(ok=>{if(!ok)toast('Tid
 window.addEventListener('beforeunload',()=>files.forEach(f=>URL.revokeObjectURL(f.url)));
 })();
 </script>
-</body>
+<script>(function(){var loc=location.href.replace(/#.*$/,"");var ATTR_NAMES=["data-product-id","data-productid","data-product_id","product-id","productid","product_id","data-source-entity-id","source-entity-id","source_entity_id","data-product","data-metadata","data-meta"];var DATASET_KEYS=["productId","productid","product_id","sourceEntityId","sourceentityid","source_entity_id","product","metadata","meta"];function readProductId(value){if(typeof value!=="string"||value.length===0)return null;if(/^[0-9]{6,}$/.test(value))return value;var match=value.match(/(?:product(?:_|-)?id|source(?:_|-)?entity(?:_|-)?id)["'=:\s]+([0-9]{6,})/i);return match?match[1]:null}function extractProductId(start){for(var node=start;node&&node!==document.body;node=node.parentElement){for(var i=0;i<ATTR_NAMES.length;i++){var attrValue=node.getAttribute&&node.getAttribute(ATTR_NAMES[i]);var attrProductId=readProductId(attrValue);if(attrProductId)return attrProductId}var dataset=node.dataset||null;if(dataset){for(var j=0;j<DATASET_KEYS.length;j++){var dataValue=dataset[DATASET_KEYS[j]];var dataProductId=readProductId(dataValue);if(dataProductId)return dataProductId}}}return null}function isInlineMediaSlotElement(node){return !!(node&&node.getAttribute&&node.getAttribute("data-clippy-inline-media-slot")!==null)}function findInlineMediaSlot(start){for(var node=start;node&&node!==document.body;node=node.parentElement){if(isInlineMediaSlotElement(node))return node}return null}function readInlineMediaUrl(node){if(!node)return null;return node.getAttribute&&((node.getAttribute("data-clippy-inline-media-url")||node.getAttribute("data-url")||node.getAttribute("data_url")))||node.href||null}function stripHash(url){return String(url).replace(/#.*$/,"")}function urlsMatch(a,b){if(!a||!b)return false;try{return stripHash(new URL(a,loc).href)===stripHash(new URL(b,loc).href)}catch(_){return stripHash(a)===stripHash(b)}}function isFirstPartyReelUrl(value){try{var url=new URL(value,loc);if(url.protocol!=="https:")return false;var host=url.hostname.toLowerCase();var supported=host==="instagram.com"||host.endsWith(".instagram.com")||host==="facebook.com"||host.endsWith(".facebook.com");return supported&&/\/reels?\//i.test(url.pathname)}catch(_){return false}}function isInlineMediaUrlClick(node,href){var slot=findInlineMediaSlot(node);if(!slot)return false;var slotUrl=readInlineMediaUrl(slot);if(slotUrl)return urlsMatch(href,slotUrl);return isFirstPartyReelUrl(href)}function findDataHref(start){for(var node=start;node&&node!==document.body;node=node.parentElement){if(node.getAttribute){var href=node.getAttribute("data-href")||node.getAttribute("data-url");if(href)return{href:href,node:node}}}return null}var nativeOpen=window.open;window.open=function(url){if(parent!==window&&typeof url==="string"&&/^https?:\/\//.test(url)){parent.postMessage({type:"ecto:usercontent-link-click",href:url},"*");return null}return nativeOpen?nativeOpen.apply(window,arguments):null};document.addEventListener("click",function(e){var target=e.target instanceof Element?e.target:null;if(!target)return;if(parent===window)return;var a=target.closest?target.closest("a[href]"):null;if(a&&a.href&&/^https?:\/\//.test(a.href)&&a.href.replace(/#.*$/,"")!==loc){if(isInlineMediaUrlClick(a,a.href))return;var productId=extractProductId(target)||extractProductId(a);if(productId){e.preventDefault();parent.postMessage({type:"ecto-artifact-link-click",productId:productId},"*");return}e.preventDefault();parent.postMessage({type:"ecto:usercontent-link-click",href:a.href},"*");return}var dataHref=findDataHref(target);if(dataHref&&/^https?:\/\//.test(dataHref.href)&&dataHref.href.replace(/#.*$/,"")!==loc){if(isInlineMediaUrlClick(dataHref.node,dataHref.href))return;e.preventDefault();parent.postMessage({type:"ecto:usercontent-link-click",href:dataHref.href},"*")}},true)})();</script><script>(function(){var FOCUS_TYPE="ecto:artifact-focus-request";var CLOSE_TYPE="ecto:artifact-close-request";function focusArtifactDocument(){var body=document.body;if(!body)return;try{window.focus();}catch(e){}if(!body.hasAttribute("tabindex"))body.setAttribute("tabindex","-1");try{body.focus({preventScroll:true});}catch(e){try{body.focus();}catch(e2){}}}window.addEventListener("message",function(event){if(event.source!==window.parent)return;var data=event.data;if(!data||typeof data!=="object"||data.type!==FOCUS_TYPE)return;if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",focusArtifactDocument,{once:true});return;}focusArtifactDocument();});window.addEventListener("keydown",function(event){if(event.key!=="Escape")return;window.setTimeout(function(){if(event.defaultPrevented)return;window.parent.postMessage({type:CLOSE_TYPE},"*");},0);});})();</script></body>
 </html>
